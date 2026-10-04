@@ -1,0 +1,9 @@
+.git
+.env
+.venv
+venv
+__pycache__
+.pytest_cache
+*.py[cod]
+tests
+Principal_Infrastructure_and_Site_Reliability_Engineer_-_Take-Home_Assessment__.pdf

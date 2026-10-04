@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+Principal_Infrastructure_and_Site_Reliability_Engineer_-_Take-Home_Assessment__.pdf

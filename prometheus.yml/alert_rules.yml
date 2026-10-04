@@ -1,0 +1,44 @@
+groups:
+  - name: weather-service
+    rules:
+      - alert: WeatherServiceTargetDown
+        expr: up{job="weather-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Weather service metrics target is down
+          description: Prometheus has been unable to scrape the weather service for at least one minute.
+
+      - alert: WeatherServiceHighHttp5xxRate
+        expr: |
+          sum(rate(weather_service_http_requests_total{job="weather-service",status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(weather_service_http_requests_total{job="weather-service"}[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Weather service HTTP 5xx rate is elevated
+          description: More than 5% of HTTP requests have failed with 5xx responses over five minutes.
+
+      - alert: WeatherServiceUpstreamFailures
+        expr: |
+          sum(rate(weather_service_upstream_requests_total{job="weather-service",outcome=~"timeout|connection_error|server_error|invalid_response"}[5m]))
+          /
+          clamp_min(sum(rate(weather_service_upstream_requests_total{job="weather-service"}[5m])), 1e-9) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Weather provider failures are elevated
+          description: More than 10% of upstream requests failed over five minutes.
+
+      - alert: WeatherServiceResponseLoggingErrors
+        expr: increase(weather_service_db_operations_total{job="weather-service",operation="record_weather",outcome="error"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: MySQL response logging is failing
+          description: At least one weather response could not be persisted during the last five minutes.
