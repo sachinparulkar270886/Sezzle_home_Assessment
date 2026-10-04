@@ -118,7 +118,14 @@ This file contains the user prompts visible in the Sezzle take-home project conv
 
 ## Prompt 12
 
-> i done some manual changes withour copilot help like data base connection and few others, now agin review this implementation
+> add below feature in monitoring as infra and sre point of view in metrics and wherever required : 
+>  TLS / HTTPS
+>  auth or gateway protection
+>  rate limiting
+
 
 ## Prompt 13
+> i done some manual changes withour copilot help like data base connection and few others, now agin review this implementation
+
+## Prompt 14
 > write a setup.py that check all the dependcies and if not present install it which required for the project.

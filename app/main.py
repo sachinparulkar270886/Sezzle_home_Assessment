@@ -1,5 +1,7 @@
 import logging
+import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -12,7 +14,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.cache import WeatherCache
 from app.config import Settings, settings
 from app.database import Base, WeatherRepository, check_database
-from app.observability import configure_logging, install_request_metrics, instrument_database, metrics_response
+from app.observability import (
+    AUTH_REQUESTS,
+    RATE_LIMIT_REQUESTS,
+    TLS_REQUESTS,
+    configure_logging,
+    install_request_metrics,
+    instrument_database,
+    metrics_response,
+)
 from app.schemas import HealthResponse, WeatherResponse
 from app.weather import WeatherService, WeatherServiceError
 
@@ -21,6 +31,28 @@ logger = logging.getLogger(__name__)
 
 def create_app(config: Settings = settings) -> FastAPI:
     configure_logging(config.log_level)
+    rate_limit_windows: dict[str, list[float]] = defaultdict(list)
+
+    def client_ip(request: Request) -> str:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip() or request.client.host if request.client else "unknown"
+        if request.client:
+            return request.client.host
+        return "unknown"
+
+    def is_rate_limited(request: Request) -> bool:
+        limit = config.rate_limit_per_minute
+        if limit <= 0:
+            return False
+        key = client_ip(request)
+        now = time.monotonic()
+        window = rate_limit_windows[key]
+        window[:] = [stamp for stamp in window if now - stamp < 60]
+        if len(window) >= limit:
+            return True
+        window.append(now)
+        return False
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -68,9 +100,48 @@ def create_app(config: Settings = settings) -> FastAPI:
     install_request_metrics(application)
 
     @application.middleware("http")
-    async def add_request_id(request: Request, call_next):
+    async def gateway_security(request: Request, call_next):
         request_id = request.headers.get("X-Request-ID", "")[:128] or str(uuid.uuid4())
         request.state.request_id = request_id
+
+        forwarded_scheme = request.headers.get("x-forwarded-proto", "")
+        scheme = forwarded_scheme.split(",", 1)[0].strip().lower() if forwarded_scheme else request.url.scheme
+        TLS_REQUESTS.labels(scheme=scheme, outcome="observed").inc()
+
+        if request.url.path in {"/health", "/ready", "/metrics"}:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+
+        if config.tls_required and scheme != "https":
+            TLS_REQUESTS.labels(scheme=scheme, outcome="blocked").inc()
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "HTTPS/TLS is required for this service", "request_id": request_id},
+            )
+
+        if config.require_auth:
+            auth_header = request.headers.get("Authorization", "")
+            token = auth_header.split(" ", 1)[1] if " " in auth_header else ""
+            if auth_header.lower().startswith("bearer ") and token == config.auth_token:
+                AUTH_REQUESTS.labels(outcome="allowed").inc()
+            else:
+                AUTH_REQUESTS.labels(outcome="denied").inc()
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized", "request_id": request_id},
+                )
+        else:
+            AUTH_REQUESTS.labels(outcome="disabled").inc()
+
+        if is_rate_limited(request):
+            RATE_LIMIT_REQUESTS.labels(outcome="blocked").inc()
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded", "request_id": request_id},
+            )
+        RATE_LIMIT_REQUESTS.labels(outcome="allowed").inc()
+
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response

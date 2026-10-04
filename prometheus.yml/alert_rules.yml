@@ -42,3 +42,30 @@ groups:
         annotations:
           summary: MySQL response logging is failing
           description: At least one weather response could not be persisted during the last five minutes.
+
+      - alert: WeatherServiceGatewayAuthFailures
+        expr: increase(weather_service_auth_requests_total{job="weather-service",outcome="denied"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Gateway authentication failures are increasing
+          description: Requests without valid bearer credentials are being rejected by the edge protection layer.
+
+      - alert: WeatherServiceRateLimitEvents
+        expr: increase(weather_service_rate_limit_total{job="weather-service",outcome="blocked"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Rate limiting is actively blocking traffic
+          description: The ingress rate limiter has rejected requests over the configured threshold.
+
+      - alert: WeatherServiceUnencryptedTraffic
+        expr: increase(weather_service_tls_requests_total{job="weather-service",scheme!="https",outcome="observed"}[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Unencrypted HTTP traffic has been observed
+          description: Requests are arriving over non-TLS transport and should be terminated at the gateway or redirected to HTTPS.

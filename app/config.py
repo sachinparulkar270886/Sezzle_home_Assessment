@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     upstream_retry_attempts: int = Field(default=3, ge=1, le=3)
     upstream_total_timeout_seconds: float = Field(default=20.0, gt=0)
     upstream_max_concurrency: int = Field(default=20, ge=1)
+    require_auth: bool = False
+    auth_token: str = ""
+    tls_required: bool = False
+    rate_limit_per_minute: int = Field(default=60, ge=0)
 
 
 settings = Settings()

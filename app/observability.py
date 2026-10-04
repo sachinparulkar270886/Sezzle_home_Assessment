@@ -57,6 +57,21 @@ DB_POOL_CHECKOUTS = Counter(
     "weather_service_db_pool_checkouts_total",
     "Number of database connection checkouts.",
 )
+TLS_REQUESTS = Counter(
+    "weather_service_tls_requests_total",
+    "HTTP requests classified by observed transport security state.",
+    ("scheme", "outcome"),
+)
+AUTH_REQUESTS = Counter(
+    "weather_service_auth_requests_total",
+    "Gateway authentication outcomes for incoming requests.",
+    ("outcome",),
+)
+RATE_LIMIT_REQUESTS = Counter(
+    "weather_service_rate_limit_total",
+    "Rate limiting outcomes for incoming requests.",
+    ("outcome",),
+)
 
 
 class JsonFormatter(logging.Formatter):

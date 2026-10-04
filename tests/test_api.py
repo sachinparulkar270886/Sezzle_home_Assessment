@@ -129,3 +129,45 @@ async def test_ready_reports_response_logging_failure(monkeypatch):
         "database_logging": "unavailable",
         "cache": "ok",
     }
+
+
+@pytest.mark.asyncio
+async def test_gateway_auth_guard_blocks_requests_without_token():
+    app = create_app(Settings(require_auth=True, auth_token="secret-token"))
+    app.state.weather_service = FakeWeatherService()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/weather/Paris")
+        protected = await client.get("/weather/Paris", headers={"Authorization": "Bearer secret-token"})
+
+    assert response.status_code == 401
+    assert protected.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_gateway_rate_limit_blocks_excessive_requests():
+    app = create_app(Settings(rate_limit_per_minute=1))
+    app.state.weather_service = FakeWeatherService()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.get("/weather/Paris")
+        second = await client.get("/weather/Paris")
+        metrics = await client.get("/metrics")
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert 'weather_service_rate_limit_total' in metrics.text
+
+
+@pytest.mark.asyncio
+async def test_tls_metric_and_gateway_policy_are_exposed():
+    app = create_app(Settings(tls_required=True))
+    app.state.weather_service = FakeWeatherService()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://test") as client:
+        allowed = await client.get("/health")
+        metrics = await client.get("/metrics")
+
+    assert allowed.status_code == 200
+    assert 'weather_service_tls_requests_total' in metrics.text
+    assert 'weather_service_auth_requests_total' in metrics.text
